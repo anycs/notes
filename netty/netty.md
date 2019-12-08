@@ -296,6 +296,121 @@ try {
 
 * **Unpooled**：操作缓冲区的工具类
 
+## Netty服务器端例子
+
+```java
+//1.创建连接线程组,处理线程组
+        EventLoopGroup bossGroup = new NioEventLoopGroup();
+        EventLoopGroup workerGroup = new NioEventLoopGroup();
+        //2.创建服务端启动助手
+        ServerBootstrap bootstrap = new ServerBootstrap();
+        //3.设置线程组
+        bootstrap.group(bossGroup,workerGroup)
+                .channel(NioServerSocketChannel.class)//设置服务器端通道类型
+                .option(ChannelOption.SO_BACKLOG,128)//设置线程队列中等待连接的数量
+                .childOption(ChannelOption.SO_KEEPALIVE,true)//保持活动连接状态
+                .childHandler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel socketChannel) throws 																		Exception {
+                        //4.给链上加入handler
+                        socketChannel.pipeline().addLast(new NettyServerHandler());
+                    }
+                });
+        System.out.println("服务器就绪....");
+        try {
+            //绑定端口
+            ChannelFuture cf = bootstrap.bind(9999).sync();
+            if(cf.isSuccess()){
+                System.out.println("启动成功");
+            }
+            //关闭通道，线程组
+            cf.channel().closeFuture().sync();
+            bossGroup.shutdownGracefully();
+            workerGroup.shutdownGracefully();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+```
+
+
+
+## Netty创建客户端例子
+
+```java
+ //创建线程组
+        NioEventLoopGroup group = new NioEventLoopGroup();
+        //创建启动助手
+        Bootstrap b = new Bootstrap();
+        //设置线程组
+        b.group(group)
+                .channel(NioSocketChannel.class)
+                .handler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel socketChannel) throws 																		Exception {
+                        //添加客户端处理类到链中
+                        socketChannel.pipeline().addLast(new NettyClientHandler());
+                    }
+                });
+        try {
+            //连接服务端,异步非阻塞
+            ChannelFuture cf = b.connect("127.0.0.1", 9999).sync();
+            //关闭连接
+            cf.channel().closeFuture().sync();
+
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+```
+
+## 自定义Handler处理类
+
+```java
+/**
+     * 读取数据事件
+     * @param ctx
+     * @param msg
+     * @throws Exception
+     */
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        ByteBuf buf = (ByteBuf)msg;
+        System.out.println("客户端消息:" + buf.toString(CharsetUtil.UTF_8));
+    }
+
+    /**
+     * 数据读取完毕事件
+     * @param ctx
+     * @throws Exception
+     */
+
+    @Override
+    public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+        //给客户端发送消息
+        ctx.writeAndFlush(Unpooled.copiedBuffer("没钱",CharsetUtil.UTF_8));
+    }
+
+    /**
+     * 异常发生事件
+     * @param ctx
+     * @param cause
+     * @throws Exception
+     */
+    @Override
+    public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        //发生异常关闭通道，ChannelHandlerContext上线文关闭通道就关闭了
+        ctx.close();
+    }
+```
+
+## 需要注意的地方
+
+* 一般自定义处理类使用：继承SimpleChannelInboundHandler<T>带有泛型的这个类
+
+* > ChannelFuture cf = b.==bind(9999)==.sync(); 中bind为异步绑定端口，sync为同步阻塞等待ChannelFuture结果【主线程】
+
+
+
 
 
 
