@@ -5,20 +5,30 @@
 > bio：阻塞io,如下实例在连接客户端和读写时均要阻塞。
 >
 > * 以流的形式进行数据读写
+>
 > * 需要自己创建数据缓冲数组如：byte[]
-> * 阻塞式
+>
+> * 阻塞式（accept/read/write/connect）
+>
+> * 每个线程一个客户端，因为不能一直等前一个客户端处理完了才去处理下一个连接
+>
+> * 通道单向的
+>
+> * 不适合大量客户端连接，由于存在大量阻塞
+>
+>   ![](./resources/bio.png)
 
 ```java
 //服务端      		
 			ServerSocket serverSocket = new ServerSocket(9999);
             while (true) {
                 Socket accept = serverSocket.accept();//阻塞等待客户端连接
-                InputStream inputStream = accept.getInputStream();//阻塞等待消息
+                InputStream inputStream = accept.getInputStream();
                 byte[] buff = new byte[1024];
-                inputStream.read(buff);
+                inputStream.read(buff);//阻塞等待消息
                 System.out.println(new String(buff));
-                OutputStream outputStream = accept.getOutputStream();//阻塞
-                outputStream.write("没有".getBytes());
+                OutputStream outputStream = accept.getOutputStream();
+                outputStream.write("没有".getBytes());//阻塞
                 outputStream.flush();
                 outputStream.close();
             }
@@ -31,6 +41,8 @@
 > * 以通道channel进行数据读写
 > * 提供一个buffer
 > * 非阻塞式
+
+
 
 
 
@@ -262,15 +274,53 @@ try {
 
 ## AIO
 
-> AIO:异步非阻塞，jdk1.7之后的才出现的。
+> AIO:异步非阻塞，jdk1.7之后的才出现的。由操作系统 通知 大管家（selector）有客户端要连接，大管家只需要等那儿，不用轮询【减少了cpu消耗】
 
 ## BIO-NIO-BIO比较
 
 ![](./resources/bio_nio_aio.png)
 
+## 网络IO的模型演变
+
+* **BIO-多客户端多线程**
+
+> 来一个客户端就创建一个线程，不适合大量连接
+
+![](./resources/bio.png)
+
+* **NIO-单线程模型**
+
+> selector负责连接/读/写等，一个线程需要处理很多事儿。
+
+![](./resources/nio_single.png)
+
+* **NIO-reactor模式**
+
+> 响应式，selector专门负责连接，其他read/write由一个线程池去操作
+
+![](./resources/reactor.png)
+
+以上这种模式都需要轮询如：while(true){}方式去看是否有某事件操作。
+
+* **AIO非轮询方式异步**
+
+> 由操作系统 通知 大管家（selector）有客户端要连接，大管家只需要等那儿，不用轮询【减少了cpu消耗】
+
+![](./resources/aio_mode.png)
+
+## 同步-异步-阻塞-非阻塞
+
+> 同步异步：关注的是消息通信机制，如：发了消息，消息回来是否还是我处理，不是为异步。
+>
+> 阻塞非阻塞：关注的是等待消息时的状态，一直等为阻塞，干其他事儿就是非阻塞。
+>
+> ![](./resources/asyn_blocking.png)
+
 # Netty
 
-> 开源的高性能，高可靠的基于NIO的网络编程框架，由JBOSS开发。异步事件驱动，==链式操作==，类似过滤器一样，可以加入不同的处理（handler）
+> 开源的高性能，高可靠的基于NIO/BIO的网络编程框架，由JBOSS开发。异步事件驱动，==链式操作==，类似过滤器一样，可以加入不同的处理（handler）。封装的类似于AIO,连接代码和业务处理代码分离。
+>
+> **为什么没有基于AIO?因为 AIO和NIO在linux中操作系统层都是轮询方式,AIO还需要另外封装来实现事件驱动，所以Netty使用NIO,效率上可能更好**
 
 ![](./resources/netty_mode.jpeg)
 
