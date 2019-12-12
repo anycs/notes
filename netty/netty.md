@@ -459,11 +459,431 @@ try {
 
 * > ChannelFuture cf = b.==bind(9999)==.sync(); 中bind为异步绑定端口，sync为同步阻塞等待ChannelFuture结果【主线程】
 
+# ProtoBuf
+
+在netty中也提供了编解码器，但其中使用的是java的串行化技术，效率底下
+
+* ObjectDecoder/ObjectEncoder
+* StringDecoder/StringEncoder
+
+```java
+//给链中加入自定义的处理类
+                        socketChannel.pipeline()
+                                .addLast(new StringDecoder())// 解码器
+                                .addLast(new StringEncoder())// 编码器
+                                .addLast(new ChatServerHandler());
+```
+
+> protoBuf数据串行化技术
+>
+> * 易于使用，高效的二进制自动编码
+> * 跨语言（java,c++,python等等）
+
+**使用过程**
+
+1. 设计对象
+
+2. 安装protobuff
+
+   - 下载：https://github.com/protocolbuffers/protobuf/releases  protoc-3.11.1-linux-x86_64.zip
+   - 解压，配置环境变量（可以不用）
+
+3. 描述对象
+
+   > 采用xxx.proto格式，如下
+   >
+   > ```proto
+   > syntax = "proto3";//指定使用proto3
+   > 
+   > package tutorial;
+   > 
+   > option java_package = "com.space.protobuff";//生成的java类包
+   > option java_outer_classname = "AddressBookProtos";//java类名
+   > 
+   > message Person {
+   >   string name = 1;
+   >   int32 id = 2;
+   >   string email = 3;
+   >   //枚举
+   >   enum PhoneType {
+   >     MOBILE = 0;
+   >     HOME = 1;
+   >     WORK = 2;
+   >   }
+   >   //内部类
+   >   message PhoneNumber {
+   >     string number = 1;
+   >     PhoneType type = 2;
+   >   }
+   > 
+   >   repeated PhoneNumber phones = 4;
+   > }
+   > 
+   > message AddressBook {
+   >   repeated Person people = 1;
+   > }
+   > ```
+   >
+   > 字段规则：
+   > ~~required -> 字段只能也必须出现 1 次~~ proto3移除了
+   > ~~optional -> 字段可出现 0 次或1次~~   proto3移除了
+   > repeated -> 字段可出现任意多次（包括 0）
+   > 定义：字段规则 类型 名称 = 字段编号;
+   > ==proto3和proto2区别==：
+   >     **消息定义时，移除了 “required”、 “optional”**
+   >
+   > ​    **移除了 default 选项**
+   >
+   > ​    **枚举类型的第一个字段必须为 0**
+   >
+   > ​    **增加maps结构**
+   >
+   > ​    **去掉extensions类型，使用Any新标准类型替换** 
+
+4. 编译文件生成java类
+
+   > ```she
+   >  protoc --java_out=src/main/java/ person.proto
+   > ```
+
+5. 加入maven依赖，复制java类到相应的项目目录下
+
+   ```pom
+   		<dependency>
+               <groupId>com.google.protobuf</groupId>
+               <artifactId>protobuf-java</artifactId>
+               <version>3.11.1</version>
+           </dependency>
+   ```
+
+6. 使用对象并编写**串行化**和**反串行化**
+
+   ```java
+   Person person = Person.newBuilder()
+                   .setId(1)
+                   .setName("space")
+                   .setEmail("11@11.com")
+                   .addPhones(Person.PhoneNumber.newBuilder()
+                           .setNumber("1234444")
+                           .setType(Person.PhoneType.MOBILE)
+                           .build()
+                   ).build();
+           try {
+               //串行化为输出流
+               person.writeTo(new FileOutputStream("person.data"));
+               //从输入流反串行化
+               Person person1 = Person.parseFrom(new FileInputStream("person.data"));
+               System.out.println(person1.getName());
+           } catch (IOException e) {
+               e.printStackTrace();
+           }
+   //其他方法
+   Person person2 = person_builder.clear().build();//清空字段
+   //序列化为字节数组
+   Person person1 = person_builder.build();
+   byte[] bytes = person1.toByteArray();
+   //从字节数组反序列化
+   Person person3 = Person.parseFrom(bytes);
+   
+   
+   ```
+
+## 序列化实例
+
+```java
+public static void main(String[] args) throws IOException {
+        //需要合并的addressBook对象
+        InputStream in = new FileInputStream("addressBook.data");
+        //序列化输出文件
+        OutputStream out = new FileOutputStream("addressBook_all.data");
+        AddressBook.Builder addressBook_builder = AddressBook.newBuilder();
+        //合并
+        addressBook_builder.mergeFrom(in);
+        for (int i = 0; i < 10; i++) {
+            addressBook_builder.addPeople(createPerson(i));
+        }
+        AddressBook addressBook = addressBook_builder.build();
+        addressBook.writeTo(out);
+        in.close();
+        out.close();
+
+    }
+    public static Person createPerson(int i){
+        Person.Builder person_builder = Person.newBuilder()
+                .setId(i)
+                .setName("name_" + i)
+                .setEmail(i + "@11.com")
+                .addPhones(Person.PhoneNumber.newBuilder()
+                        .setNumber(i + "")
+                        .setType(Person.PhoneType.MOBILE)
+                        .build()
+                );
+        return person_builder.build();
+    }
+```
+
+## 反序列化实例
+
+```java
+public static void main(String[] args) throws Exception {
+        InputStream in = new FileInputStream("addressBook_all.data");
+        AddressBook addressBook = AddressBook.parseFrom(in);
+        List<AddressBookProtos.Person> peopleList = addressBook.getPeopleList();
+        for (AddressBookProtos.Person person : peopleList) {
+            System.out.println(person.toString());
+        }
+        in.close();
+    }
+```
+
+# RPC
+
+> RPC:远程过程调用，通过网络从远程计算机程序上请求服务，而不需要了解网络底层实现的技术。常见的RPC框架有：
+>
+> * 阿里Dubbo
+> * Spring Cloud
+> * Google 的gRPC
+
+![](./resources/rpc.png)
+
+## 手动实现RPC步骤/注意
+
+* 客户端与服务需保持相同接口API和相同的调用信息封装的Bean
+
+* 客户端/服务端使用合适的编解码
+
+  > 如：ObjectEncoder/ObjectDecoder 更高效的可以使用：protobuf
+
+* 服务端在连接成功后，读取传递的调用信息并查找对应的实现类并调用返回结果
+
+  > 使用reflections 框架扫描实现类，传入调用信息使用反射调用返回结果
+  >
+  > ```xml
+  > <dependency>    
+  >     <groupId>org.reflections</groupId>    
+  >     <artifactId>reflections</artifactId>    
+  >     <version>0.9.10</version>
+  > </dependency>
+  > ```
+
+* 客户端 使用JDK动态代理 技术 去连接服务端 获取结果
+
+* 客户端调用
+
+  
+
+## 手动实现RPC
+
+调用接口：服务器端和客户端一致
+
+```java
+public interface HelloRPC {
+    String hello(String name);
+}
+```
+
+服务器端接口实现类：
+
+```java
+public class HelloRPCImpl implements HelloRPC {
+    @Override
+    public String hello(String name) {
+        return "hello " + name;
+    }
+}
+```
+
+共同的调用信息封装PO
+
+```java
+public class ClassInfo implements Serializable{
+    /**
+     * 类名
+     */
+    private String className;
+    /**
+     * 方法名
+     */
+    private String methodName;
+    /**
+     * 方法参数类型
+     */
+    private Class<?>[] types;
+    /**
+     * 参数列表
+     */
+    private Object[] objects;
+    //此处省略get/set方法
+}
+```
+
+服务器端server
+
+```java
+public class Server {
+
+    public void start(){
+        EventLoopGroup bossGroup = new NioEventLoopGroup();
+        EventLoopGroup workerGroup = new NioEventLoopGroup();
+        ServerBootstrap b = new ServerBootstrap();
+        b.group(bossGroup,workerGroup);
+        b.channel(NioServerSocketChannel.class);
+        b.childOption(ChannelOption.SO_BACKLOG,128)
+                .childOption(ChannelOption.SO_KEEPALIVE,true);
+        b.childHandler(new ChannelInitializer<SocketChannel>() {
+            @Override
+            protected void initChannel(SocketChannel socketChannel) throws Exception {
+                socketChannel.pipeline()
+                        .addLast(
+                        new ObjectDecoder(ClassResolvers.cacheDisabled(this.getClass().getClassLoader())))
+                        .addLast(new ObjectEncoder())
+                        .addLast(new InvokeHandler());
+            }
+        });
+
+        try {
+            ChannelFuture f = b.bind(8888).sync();
+            if(f.isSuccess()){
+                System.out.println("启动成功");
+            }
+            f.channel().closeFuture().sync();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }finally {
+            bossGroup.shutdownGracefully();
+            workerGroup.shutdownGracefully();
+        }
+    }
+
+    public static void main(String[] args) {
+        new Server().start();
+    }
+}
+```
+
+服务器端处理类：
+
+```java
+public class InvokeHandler extends ChannelInboundHandlerAdapter {
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        // 获取需要调用的类，方法信息
+        if(null == msg){
+            return;
+        }
+        ClassInfo classInfo = (ClassInfo)msg;
+
+        // 获取实现类
+        String implClassName = getImplClassName(classInfo);
+        // 使用反射调用实现类
+        Object implClass = Class.forName(implClassName).newInstance();
+        Method method = implClass.getClass().getMethod(classInfo.getMethodName(), classInfo.getTypes());
+        Object result = method.invoke(implClass, classInfo.getObjects());
+        ctx.writeAndFlush(result);
+    }
+
+    private String getImplClassName(ClassInfo classInfo) throws Exception {
+        // 提供服务的包
+        String packagePath = "com.space.rpc.server.service";
+        // 获取接类
+        String fullClassName = classInfo.getClassName();
+        String interfaceClassName = fullClassName.substring(fullClassName.lastIndexOf("."));
+        Class superClass = Class.forName(packagePath + interfaceClassName);
+        // 获取包下的实现类
+        Reflections reflections = new Reflections(packagePath);
+        Set<Class> implClassSet = reflections.getSubTypesOf(superClass);
+        int subClassSize = implClassSet.size();
+        if(subClassSize == 0){
+            System.out.println("没有找到实现类");
+            return null;
+        }else if(subClassSize > 1 ){
+            System.out.println("多个实现类，不能确定调用哪个");
+            return null;
+        }else{
+            // 转换set为数组
+            Class[] classes = implClassSet.toArray(new Class[0]);
+            return classes[0].getName();
+        }
+    }
 
 
+}
+```
 
+客户端代理类：
 
+```java
+public class RPCProxy {
+    public static Object create(Class target){
+        return Proxy.newProxyInstance(target.getClassLoader(), new Class[]{target}, new InvocationHandler() {
+            @Override
+            public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                // 封装请求调用类的信息
+                ClassInfo classInfo = new ClassInfo();
+                classInfo.setClassName(target.getName());
+                classInfo.setMethodName(method.getName());
+                classInfo.setTypes(method.getParameterTypes());
+                classInfo.setObjects(args);
+                // 开始使用netty发送请求
+                ResultHandler resultHandler = new ResultHandler();
+                EventLoopGroup group = new NioEventLoopGroup();
+                Bootstrap b = new Bootstrap();
+                b.group(group);
+                b.channel(NioSocketChannel.class);
+                b.handler(new ChannelInitializer<SocketChannel>() {
+                    @Override
+                    protected void initChannel(SocketChannel socketChannel) throws Exception {
+                        socketChannel.pipeline()
+                                .addLast(new ObjectDecoder(ClassResolvers.cacheDisabled(this.getClass().getClassLoader())))
+                                .addLast(new ObjectEncoder())
+                                .addLast(resultHandler);
+                    }
+                });
+                try {
+                    ChannelFuture f = b.connect("127.0.0.1", 8888).sync();
+                    if(f.isSuccess()){
+                        System.out.println("连接成功");
+                    }
+                    // 发送请求信息
+                    f.channel().writeAndFlush(classInfo).sync();
+                    f.channel().closeFuture().sync();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }finally {
+                    group.shutdownGracefully();
+                }
+                return resultHandler.getResult();
+            }
+        });
+    }
+}
+```
 
+客户端处理类：
 
-# Protobuf
+```java
+public class ResultHandler extends ChannelInboundHandlerAdapter {
+    private Object result;
+    public Object getResult(){
+        return result;
+    }
+    @Override
+    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+        this.result = msg;
+        ctx.close();
+    }
+}
+```
+
+调用测试：
+
+```java
+public class Test {
+    public static void main(String[] args) {
+        HelloRPC helloRPC = (HelloRPC)RPCProxy.create(HelloRPC.class);
+        String result2 = helloRPC.hello("111");
+        System.out.println("HelloRPC: " + result2);
+    }
+}
+```
 
